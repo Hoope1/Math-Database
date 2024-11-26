@@ -7,7 +7,7 @@ from datetime import datetime
 def setup_database():
     connection = sqlite3.connect("participants.db")
     cursor = connection.cursor()
-    
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS participants (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,6 +28,7 @@ def setup_database():
             reached_points INTEGER,
             max_points INTEGER,
             percentage REAL,
+            date TEXT,
             FOREIGN KEY(participant_id) REFERENCES participants(id)
         )
     """)
@@ -35,121 +36,121 @@ def setup_database():
     connection.commit()
     return connection
 
-# Teilnehmer hinzufügen
-def add_participant(connection, name, sv_number, job, entry_date, exit_date, status):
+# Teilnehmer hinzufügen oder aktualisieren
+def add_or_update_participant(connection, participant_id, name, sv_number, job, entry_date, exit_date):
     cursor = connection.cursor()
-    cursor.execute("""
-        INSERT INTO participants (name, sv_number, job, entry_date, exit_date, status)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (name, sv_number, job, entry_date, exit_date, status))
+    status = "Aktiv" if exit_date > datetime.today().strftime("%Y-%m-%d") else "Inaktiv"
+    if participant_id:
+        cursor.execute("""
+            UPDATE participants
+            SET name = ?, sv_number = ?, job = ?, entry_date = ?, exit_date = ?, status = ?
+            WHERE id = ?
+        """, (name, sv_number, job, entry_date, exit_date, status, participant_id))
+    else:
+        cursor.execute("""
+            INSERT INTO participants (name, sv_number, job, entry_date, exit_date, status)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (name, sv_number, job, entry_date, exit_date, status))
     connection.commit()
 
-# Testergebnisse hinzufügen
-def add_test(connection, participant_id, category, reached_points, max_points):
+# Testergebnisse hinzufügen oder aktualisieren
+def add_or_update_test(connection, test_id, participant_id, category, reached_points, max_points, date):
     percentage = (reached_points / max_points) * 100 if max_points > 0 else 0
     cursor = connection.cursor()
-    cursor.execute("""
-        INSERT INTO tests (participant_id, category, reached_points, max_points, percentage)
-        VALUES (?, ?, ?, ?, ?)
-    """, (participant_id, category, reached_points, max_points, percentage))
+    if test_id:
+        cursor.execute("""
+            UPDATE tests
+            SET category = ?, reached_points = ?, max_points = ?, percentage = ?, date = ?
+            WHERE id = ?
+        """, (category, reached_points, max_points, percentage, date, test_id))
+    else:
+        cursor.execute("""
+            INSERT INTO tests (participant_id, category, reached_points, max_points, percentage, date)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (participant_id, category, reached_points, max_points, percentage, date))
     connection.commit()
 
-# Teilnehmer laden
+# Teilnehmer und Tests laden
 def load_participants(connection):
     cursor = connection.cursor()
     cursor.execute("SELECT * FROM participants")
     return cursor.fetchall()
 
-# Tests laden
-def load_tests(connection):
+def load_tests(connection, participant_id=None):
     cursor = connection.cursor()
-    cursor.execute("SELECT * FROM tests")
+    if participant_id:
+        cursor.execute("SELECT * FROM tests WHERE participant_id = ?", (participant_id,))
+    else:
+        cursor.execute("SELECT * FROM tests")
     return cursor.fetchall()
-
-# CSV-Export für Teilnehmer und Tests
-def export_to_csv(connection):
-    participants = pd.read_sql_query("SELECT * FROM participants", connection)
-    tests = pd.read_sql_query("SELECT * FROM tests", connection)
-
-    participants.to_csv("participants.csv", index=False)
-    tests.to_csv("tests.csv", index=False)
-
-# CSV-Import für Teilnehmer und Tests
-def import_from_csv(connection):
-    participants = pd.read_csv("participants.csv")
-    tests = pd.read_csv("tests.csv")
-
-    participants.to_sql("participants", connection, if_exists="replace", index=False)
-    tests.to_sql("tests", connection, if_exists="replace", index=False)
 
 # Streamlit GUI
 def main():
     connection = setup_database()
-    st.title("Mathematik-Kurs Teilnehmerverwaltung")
+    st.title("Teilnehmer- und Testergebnisverwaltung")
 
-    # Teilnehmer hinzufügen
-    with st.form("add_participant"):
-        st.subheader("Teilnehmer hinzufügen")
-        name = st.text_input("Name")
-        sv_number = st.text_input("SV-Nummer (XXXXDDMMYY)")
-        job = st.text_input("Berufswunsch (Großbuchstaben)")
-        entry_date = st.date_input("Eintrittsdatum", value=datetime.today())
-        exit_date = st.date_input("Austrittsdatum", value=datetime.today())
-        status = "Aktiv" if exit_date > datetime.today().date() else "Inaktiv"
-        submitted = st.form_submit_button("Hinzufügen")
-
-        if submitted and name and sv_number and job:
-            add_participant(connection, name, sv_number, job, entry_date.strftime("%d.%m.%Y"), exit_date.strftime("%d.%m.%Y"), status)
-            st.success("Teilnehmer hinzugefügt!")
-
-    # Testergebnisse hinzufügen
-    st.subheader("Testergebnisse hinzufügen")
-    participants = load_participants(connection)
-    participant_options = {f"{p[1]} ({p[0]})": p[0] for p in participants}
-    selected_participant = st.selectbox("Teilnehmer auswählen", ["Teilnehmer auswählen"] + list(participant_options.keys()))
-
-    if selected_participant != "Teilnehmer auswählen":
-        participant_id = participant_options[selected_participant]
-        categories = ["Textaufgaben", "Raumvorstellung", "Gleichungen", "Brüche", "Grundrechenarten", "Zahlenraum"]
-        total_reached = 0
-        total_max = 0
-
-        with st.form("add_test"):
-            test_data = {}
-            for category in categories:
-                reached = st.number_input(f"{category} erreichte Punkte", min_value=0, step=1, key=f"{category}_reached")
-                max_points = st.number_input(f"{category} max. Punkte", min_value=0, step=1, key=f"{category}_max")
-                test_data[category] = (reached, max_points)
-                total_reached += reached
-                total_max += max_points
-
-            submitted_test = st.form_submit_button("Testergebnis hinzufügen")
-
-            if submitted_test:
-                if total_max == 100:
-                    for category, (reached, max_points) in test_data.items():
-                        add_test(connection, participant_id, category, reached, max_points)
-                    st.success(f"Testergebnisse für {selected_participant} hinzugefügt!")
-                else:
-                    st.error("Die maximalen Punkte müssen insgesamt 100 ergeben!")
-
-    # Tabelle anzeigen
+    # Teilnehmerübersicht und Bearbeitung
     st.subheader("Teilnehmerübersicht")
-    participants_df = pd.read_sql_query("SELECT * FROM participants", connection)
+    participants = load_participants(connection)
+    participants_df = pd.DataFrame(participants, columns=["ID", "Name", "SV-Nummer", "Berufswunsch", "Eintrittsdatum", "Austrittsdatum", "Status"])
+    participants_df = participants_df.drop(columns=["ID", "SV-Nummer"])
     st.dataframe(participants_df)
 
-    st.subheader("Testübersicht")
-    tests_df = pd.read_sql_query("SELECT * FROM tests", connection)
-    st.dataframe(tests_df)
+    # Filter für aktive/inaktive Teilnehmer
+    show_inactive = st.checkbox("Inaktive Teilnehmer anzeigen")
+    if not show_inactive:
+        participants = [p for p in participants if p[6] == "Aktiv"]
 
-    # Export/Import
-    if st.button("Exportieren nach CSV"):
-        export_to_csv(connection)
-        st.success("Daten exportiert!")
+    # Teilnehmer hinzufügen/bearbeiten
+    st.subheader("Teilnehmer hinzufügen oder bearbeiten")
+    with st.form("participant_form"):
+        selected_participant = st.selectbox("Teilnehmer auswählen", ["Neuer Teilnehmer"] + [p[1] for p in participants])
 
-    if st.button("Importieren von CSV"):
-        import_from_csv(connection)
-        st.success("Daten importiert!")
+        if selected_participant != "Neuer Teilnehmer":
+            participant_data = next(p for p in participants if p[1] == selected_participant)
+            participant_id = participant_data[0]
+            name = st.text_input("Name", value=participant_data[1])
+            sv_number = st.text_input("SV-Nummer", value=participant_data[2])
+            job = st.text_input("Berufswunsch", value=participant_data[3])
+            entry_date = st.date_input("Eintrittsdatum", value=datetime.strptime(participant_data[4], "%Y-%m-%d"))
+            exit_date = st.date_input("Austrittsdatum", value=datetime.strptime(participant_data[5], "%Y-%m-%d"))
+        else:
+            participant_id = None
+            name = st.text_input("Name")
+            sv_number = st.text_input("SV-Nummer")
+            job = st.text_input("Berufswunsch")
+            entry_date = st.date_input("Eintrittsdatum", value=datetime.today())
+            exit_date = st.date_input("Austrittsdatum", value=datetime.today())
+
+        submitted = st.form_submit_button("Speichern")
+
+        if submitted:
+            add_or_update_participant(connection, participant_id, name, sv_number, job, entry_date.strftime("%Y-%m-%d"), exit_date.strftime("%Y-%m-%d"))
+            st.success("Teilnehmer gespeichert!")
+
+    # Testergebnisse hinzufügen/bearbeiten
+    st.subheader("Testergebnisse hinzufügen oder bearbeiten")
+    selected_participant = st.selectbox("Teilnehmer für Testergebnisse", ["Teilnehmer auswählen"] + [p[1] for p in participants])
+
+    if selected_participant != "Teilnehmer auswählen":
+        participant_id = next(p[0] for p in participants if p[1] == selected_participant)
+        tests = load_tests(connection, participant_id)
+
+        if tests:
+            tests_df = pd.DataFrame(tests, columns=["ID", "Teilnehmer-ID", "Kategorie", "Erreichte Punkte", "Maximale Punkte", "Prozent", "Datum"])
+            st.dataframe(tests_df.drop(columns=["ID", "Teilnehmer-ID"]))
+
+        with st.form("test_form"):
+            category = st.selectbox("Kategorie", ["Textaufgaben", "Raumvorstellung", "Gleichungen", "Brüche", "Grundrechenarten", "Zahlenraum"])
+            reached_points = st.number_input("Erreichte Punkte", min_value=0, step=1)
+            max_points = st.number_input("Maximale Punkte", min_value=0, step=1)
+            test_date = st.date_input("Testdatum", value=datetime.today())
+
+            submitted_test = st.form_submit_button("Speichern")
+
+            if submitted_test:
+                add_or_update_test(connection, None, participant_id, category, reached_points, max_points, test_date.strftime("%Y-%m-%d"))
+                st.success("Testergebnis gespeichert!")
 
 if __name__ == "__main__":
     main()
