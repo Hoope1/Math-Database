@@ -7,7 +7,7 @@ from datetime import datetime
 def setup_database():
     connection = sqlite3.connect("participants.db")
     cursor = connection.cursor()
-
+    
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS participants (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,7 +28,7 @@ def setup_database():
             reached_points INTEGER,
             max_points INTEGER,
             percentage REAL,
-            date TEXT,
+            test_date TEXT,
             FOREIGN KEY(participant_id) REFERENCES participants(id)
         )
     """)
@@ -54,20 +54,20 @@ def add_or_update_participant(connection, participant_id, name, sv_number, job, 
     connection.commit()
 
 # Testergebnisse hinzufügen oder aktualisieren
-def add_or_update_test(connection, test_id, participant_id, category, reached_points, max_points, date):
+def add_or_update_test(connection, test_id, participant_id, category, reached_points, max_points, test_date):
     percentage = (reached_points / max_points) * 100 if max_points > 0 else 0
     cursor = connection.cursor()
     if test_id:
         cursor.execute("""
             UPDATE tests
-            SET category = ?, reached_points = ?, max_points = ?, percentage = ?, date = ?
+            SET category = ?, reached_points = ?, max_points = ?, percentage = ?, test_date = ?
             WHERE id = ?
-        """, (category, reached_points, max_points, percentage, date, test_id))
+        """, (category, reached_points, max_points, percentage, test_date, test_id))
     else:
         cursor.execute("""
-            INSERT INTO tests (participant_id, category, reached_points, max_points, percentage, date)
+            INSERT INTO tests (participant_id, category, reached_points, max_points, percentage, test_date)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (participant_id, category, reached_points, max_points, percentage, date))
+        """, (participant_id, category, reached_points, max_points, percentage, test_date))
     connection.commit()
 
 # Teilnehmer und Tests laden
@@ -79,15 +79,15 @@ def load_participants(connection):
 def load_tests(connection, participant_id=None):
     cursor = connection.cursor()
     if participant_id:
-        cursor.execute("SELECT id, participant_id, category, reached_points, max_points, percentage, date FROM tests WHERE participant_id = ?", (participant_id,))
+        cursor.execute("SELECT id, participant_id, category, reached_points, max_points, percentage, test_date FROM tests WHERE participant_id = ?", (participant_id,))
     else:
-        cursor.execute("SELECT id, participant_id, category, reached_points, max_points, percentage, date FROM tests")
+        cursor.execute("SELECT id, participant_id, category, reached_points, max_points, percentage, test_date FROM tests")
     return cursor.fetchall()
 
 # Streamlit GUI
 def main():
     connection = setup_database()
-    st.title("Teilnehmer- und Testergebnisverwaltung")
+    st.title("Mathematik-Kurs Teilnehmerverwaltung")
 
     # Teilnehmerübersicht und Bearbeitung
     st.subheader("Teilnehmerübersicht")
