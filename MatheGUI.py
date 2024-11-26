@@ -79,9 +79,9 @@ def load_participants(connection):
 def load_tests(connection, participant_id=None):
     cursor = connection.cursor()
     if participant_id:
-        cursor.execute("SELECT * FROM tests WHERE participant_id = ?", (participant_id,))
+        cursor.execute("SELECT id, participant_id, category, reached_points, max_points, percentage, date FROM tests WHERE participant_id = ?", (participant_id,))
     else:
-        cursor.execute("SELECT * FROM tests")
+        cursor.execute("SELECT id, participant_id, category, reached_points, max_points, percentage, date FROM tests")
     return cursor.fetchall()
 
 # Streamlit GUI
