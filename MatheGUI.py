@@ -3,13 +3,19 @@ import pandas as pd
 import sqlite3
 from datetime import datetime, date
 import re
+import altair as alt
+from pycaret.regression import setup, compare_models, predict_model, save_model, load_model
+from weasyprint import HTML
+import base64
+import os
 
-# Initialize the database connection
+# Datenbankverbindung initialisieren
 conn = sqlite3.connect('teilnehmer.db', check_same_thread=False)
 c = conn.cursor()
 
-# Create tables if they don't exist
+# Tabellen erstellen, falls sie nicht existieren
 def init_db():
+    # Teilnehmer-Tabelle
     c.execute('''
         CREATE TABLE IF NOT EXISTS teilnehmer (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,6 +26,7 @@ def init_db():
             austrittsdatum TEXT NOT NULL
         )
     ''')
+    # Testergebnisse-Tabelle
     c.execute('''
         CREATE TABLE IF NOT EXISTS testergebnisse (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,16 +34,23 @@ def init_db():
             test_datum TEXT NOT NULL,
             textaufgaben_erreicht INTEGER,
             textaufgaben_max INTEGER,
+            textaufgaben_prozent REAL,
             raumvorstellung_erreicht INTEGER,
             raumvorstellung_max INTEGER,
+            raumvorstellung_prozent REAL,
             gleichungen_erreicht INTEGER,
             gleichungen_max INTEGER,
+            gleichungen_prozent REAL,
             brueche_erreicht INTEGER,
             brueche_max INTEGER,
+            brueche_prozent REAL,
             grundrechenarten_erreicht INTEGER,
             grundrechenarten_max INTEGER,
+            grundrechenarten_prozent REAL,
             zahlenraum_erreicht INTEGER,
             zahlenraum_max INTEGER,
+            zahlenraum_prozent REAL,
+            gesamt_prozent REAL,
             FOREIGN KEY (teilnehmer_id) REFERENCES teilnehmer (id)
         )
     ''')
@@ -44,7 +58,7 @@ def init_db():
 
 init_db()
 
-# Helper functions
+# Hilfsfunktionen
 def berechne_alter(sv_nummer):
     jahr = int(sv_nummer[8:10])
     jahr += 2000 if jahr <= int(datetime.now().year) % 100 else 1900
@@ -58,7 +72,7 @@ def berechne_alter(sv_nummer):
 def ist_aktiv(austrittsdatum):
     return datetime.strptime(austrittsdatum, '%Y-%m-%d').date() > date.today()
 
-# Database operations
+# Datenbankoperationen
 def add_teilnehmer(name, sv_nummer, berufswunsch, eintrittsdatum, austrittsdatum):
     c.execute('''
         INSERT INTO teilnehmer (name, sv_nummer, berufswunsch, eintrittsdatum, austrittsdatum)
@@ -88,22 +102,24 @@ def add_testergebnis(teilnehmer_id, test_datum, ergebnisse):
     c.execute('''
         INSERT INTO testergebnisse (
             teilnehmer_id, test_datum,
-            textaufgaben_erreicht, textaufgaben_max,
-            raumvorstellung_erreicht, raumvorstellung_max,
-            gleichungen_erreicht, gleichungen_max,
-            brueche_erreicht, brueche_max,
-            grundrechenarten_erreicht, grundrechenarten_max,
-            zahlenraum_erreicht, zahlenraum_max
+            textaufgaben_erreicht, textaufgaben_max, textaufgaben_prozent,
+            raumvorstellung_erreicht, raumvorstellung_max, raumvorstellung_prozent,
+            gleichungen_erreicht, gleichungen_max, gleichungen_prozent,
+            brueche_erreicht, brueche_max, brueche_prozent,
+            grundrechenarten_erreicht, grundrechenarten_max, grundrechenarten_prozent,
+            zahlenraum_erreicht, zahlenraum_max, zahlenraum_prozent,
+            gesamt_prozent
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         teilnehmer_id, test_datum,
-        ergebnisse['Textaufgaben']['erreicht'], ergebnisse['Textaufgaben']['max'],
-        ergebnisse['Raumvorstellung']['erreicht'], ergebnisse['Raumvorstellung']['max'],
-        ergebnisse['Gleichungen']['erreicht'], ergebnisse['Gleichungen']['max'],
-        ergebnisse['Brüche']['erreicht'], ergebnisse['Brüche']['max'],
-        ergebnisse['Grundrechenarten']['erreicht'], ergebnisse['Grundrechenarten']['max'],
-        ergebnisse['Zahlenraum']['erreicht'], ergebnisse['Zahlenraum']['max']
+        ergebnisse['Textaufgaben']['erreicht'], ergebnisse['Textaufgaben']['max'], ergebnisse['Textaufgaben']['prozent'],
+        ergebnisse['Raumvorstellung']['erreicht'], ergebnisse['Raumvorstellung']['max'], ergebnisse['Raumvorstellung']['prozent'],
+        ergebnisse['Gleichungen']['erreicht'], ergebnisse['Gleichungen']['max'], ergebnisse['Gleichungen']['prozent'],
+        ergebnisse['Brüche']['erreicht'], ergebnisse['Brüche']['max'], ergebnisse['Brüche']['prozent'],
+        ergebnisse['Grundrechenarten']['erreicht'], ergebnisse['Grundrechenarten']['max'], ergebnisse['Grundrechenarten']['prozent'],
+        ergebnisse['Zahlenraum']['erreicht'], ergebnisse['Zahlenraum']['max'], ergebnisse['Zahlenraum']['prozent'],
+        ergebnisse['gesamt_prozent']
     ))
     conn.commit()
 
@@ -116,16 +132,56 @@ def get_latest_testergebnis(teilnehmer_id):
     ''', (teilnehmer_id,))
     return c.fetchone()
 
-# Streamlit app layout
+def get_testergebnisse(teilnehmer_id):
+    c.execute('''
+        SELECT * FROM testergebnisse
+        WHERE teilnehmer_id = ?
+    ''', (teilnehmer_id,))
+    rows = c.fetchall()
+    columns = [desc[0] for desc in c.description]
+    return pd.DataFrame(rows, columns=columns)
+
+def get_all_testergebnisse():
+    c.execute('SELECT * FROM testergebnisse')
+    rows = c.fetchall()
+    columns = [desc[0] for desc in c.description]
+    return pd.DataFrame(rows, columns=columns)
+
+# Streamlit App Layout
 st.title("Mathematik-Kurs Teilnehmerverwaltung")
 
-# Tabs for different sections
-tabs = st.tabs(["Teilnehmer hinzufügen/bearbeiten", "Testergebnisse hinzufügen", "Teilnehmerliste"])
+# Teilnehmerübersicht im oberen Teil
+st.header("Teilnehmerübersicht")
+teilnehmer_df = get_teilnehmer()
+if not teilnehmer_df.empty:
+    teilnehmer_df['Alter'] = teilnehmer_df['sv_nummer'].apply(berechne_alter)
+    teilnehmer_df['Status'] = teilnehmer_df['austrittsdatum'].apply(lambda x: 'Aktiv' if ist_aktiv(x) else 'Inaktiv')
+    display_df = teilnehmer_df[['name', 'Alter', 'berufswunsch', 'eintrittsdatum', 'austrittsdatum', 'Status']]
+    display_df.columns = ['Name', 'Alter', 'Berufswunsch', 'Eintrittsdatum', 'Austrittsdatum', 'Status']
+
+    # Ein- und Ausblenden von inaktiven Teilnehmern
+    show_inactive = st.checkbox("Inaktive Teilnehmer anzeigen", value=False)
+    if not show_inactive:
+        display_df = display_df[display_df['Status'] == 'Aktiv']
+
+    # Ausgrauen von inaktiven Teilnehmern
+    def highlight_inactive(row):
+        if row['Status'] == 'Inaktiv':
+            return ['color: grey'] * len(row)
+        else:
+            return [''] * len(row)
+
+    st.dataframe(display_df.style.apply(highlight_inactive, axis=1))
+else:
+    st.write("Keine Teilnehmer vorhanden.")
+
+# Tabs für verschiedene Bereiche
+tabs = st.tabs(["Teilnehmer hinzufügen/bearbeiten", "Testergebnisse hinzufügen", "Prognosediagramm", "Bericht erstellen"])
 
 # Teilnehmer hinzufügen/bearbeiten
 with tabs[0]:
     st.header("Teilnehmer hinzufügen oder bearbeiten")
-    # Fetch existing participants for editing
+    # Teilnehmerliste aktualisieren
     teilnehmer_df = get_teilnehmer()
     teilnehmer_options = ["Neuen Teilnehmer hinzufügen"] + teilnehmer_df['name'].tolist()
     selected_teilnehmer = st.selectbox("Teilnehmer auswählen", teilnehmer_options)
@@ -174,81 +230,239 @@ with tabs[0]:
 # Testergebnisse hinzufügen
 with tabs[1]:
     st.header("Testergebnisse hinzufügen")
-    # Fetch participants for selection
-    teilnehmer_df = get_teilnehmer()
-    teilnehmer_list = teilnehmer_df[['id', 'name']].values.tolist()
-    teilnehmer_dict = {name: id for id, name in teilnehmer_list}
-    selected_name = st.selectbox("Teilnehmer auswählen", [name for name in teilnehmer_dict.keys()])
-    teilnehmer_id = teilnehmer_dict[selected_name]
-
-    test_datum = st.date_input("Testdatum", date.today())
-
-    kategorien = ["Textaufgaben", "Raumvorstellung", "Gleichungen", "Brüche", "Grundrechenarten", "Zahlenraum"]
-    ergebnisse = {}
-
-    st.subheader("Punkte eingeben")
-    for kategorie in kategorien:
-        st.markdown(f"**{kategorie}**")
-        erreicht = st.number_input(f"{kategorie} erreichte Punkte", min_value=0, value=0, key=f"{kategorie}_erreicht")
-        max_punkte = st.number_input(f"{kategorie} maximale Punkte", min_value=1, value=1, key=f"{kategorie}_max")
-        ergebnisse[kategorie] = {'erreicht': erreicht, 'max': max_punkte}
-
-    if st.button("Testergebnis hinzufügen"):
-        add_testergebnis(teilnehmer_id, test_datum.strftime('%Y-%m-%d'), ergebnisse)
-        st.success("Testergebnis erfolgreich hinzugefügt.")
-
-# Teilnehmerliste anzeigen
-with tabs[2]:
-    st.header("Teilnehmerliste")
-    show_inactive = st.checkbox("Inaktive Teilnehmer einblenden", value=True)
-
-    # Fetch participants and their latest test results
+    # Teilnehmerliste aktualisieren
     teilnehmer_df = get_teilnehmer()
     if not teilnehmer_df.empty:
-        teilnehmer_df['alter'] = teilnehmer_df['sv_nummer'].apply(berechne_alter)
-        teilnehmer_df['status'] = teilnehmer_df['austrittsdatum'].apply(lambda x: 'Aktiv' if ist_aktiv(x) else 'Inaktiv')
-        if not show_inactive:
-            teilnehmer_df = teilnehmer_df[teilnehmer_df['status'] == 'Aktiv']
+        teilnehmer_list = teilnehmer_df[['id', 'name']].values.tolist()
+        teilnehmer_dict = {name: id for id, name in teilnehmer_list}
+        selected_name = st.selectbox("Teilnehmer auswählen", [name for name in teilnehmer_dict.keys()])
+        teilnehmer_id = teilnehmer_dict[selected_name]
 
-        # Get latest test results
-        testergebnisse_list = []
-        for idx, row in teilnehmer_df.iterrows():
-            latest_result = get_latest_testergebnis(row['id'])
-            if latest_result:
-                total_erreicht = sum([
-                    latest_result[3], latest_result[5], latest_result[7],
-                    latest_result[9], latest_result[11], latest_result[13]
-                ])
-                total_max = sum([
-                    latest_result[4], latest_result[6], latest_result[8],
-                    latest_result[10], latest_result[12], latest_result[14]
-                ])
-                gesamt_prozent = (total_erreicht / total_max) * 100 if total_max > 0 else 0
-                testergebnisse_list.append({
-                    'id': row['id'],
-                    'Letztes Testdatum': latest_result[2],
-                    'Gesamtprozent': f"{gesamt_prozent:.2f}%"
-                })
-            else:
-                testergebnisse_list.append({
-                    'id': row['id'],
-                    'Letztes Testdatum': 'Keine Ergebnisse',
-                    'Gesamtprozent': ''
-                })
+        test_datum = st.date_input("Testdatum", date.today())
 
-        testergebnisse_df = pd.DataFrame(testergebnisse_list)
-        merged_df = pd.merge(teilnehmer_df, testergebnisse_df, on='id', how='left')
+        kategorien = ["Textaufgaben", "Raumvorstellung", "Gleichungen", "Brüche", "Grundrechenarten", "Zahlenraum"]
+        ergebnisse = {}
 
-        # Display DataFrame
-        display_df = merged_df[[
-            'name', 'alter', 'berufswunsch', 'eintrittsdatum', 'austrittsdatum',
-            'status', 'Letztes Testdatum', 'Gesamtprozent'
-        ]]
-        display_df.columns = [
-            'Name', 'Alter', 'Berufswunsch', 'Eintrittsdatum', 'Austrittsdatum',
-            'Status', 'Letzte Testergebnisse', 'Gesamtprozent'
-        ]
+        st.subheader("Punkte eingeben")
+        total_max_punkte = 0
+        for kategorie in kategorien:
+            st.markdown(f"**{kategorie}**")
+            erreicht = st.number_input(f"{kategorie} erreichte Punkte", min_value=0, value=0, key=f"{kategorie}_erreicht")
+            max_punkte = st.number_input(f"{kategorie} maximale Punkte", min_value=1, value=1, key=f"{kategorie}_max")
+            total_max_punkte += max_punkte
+            ergebnisse[kategorie] = {'erreicht': erreicht, 'max': max_punkte}
 
-        st.dataframe(display_df)
+        if total_max_punkte != 100:
+            st.error("Die Summe der maximalen Punkte aller Kategorien muss genau 100 sein.")
+        else:
+            if st.button("Testergebnis hinzufügen"):
+                # Prozentwerte berechnen
+                gesamt_erreicht = 0
+                for kategorie in kategorien:
+                    erreicht = ergebnisse[kategorie]['erreicht']
+                    max_punkte = ergebnisse[kategorie]['max']
+                    prozent = (erreicht / max_punkte) * 100 if max_punkte > 0 else 0
+                    ergebnisse[kategorie]['prozent'] = prozent
+                    gesamt_erreicht += erreicht
+                gesamt_prozent = (gesamt_erreicht / total_max_punkte) * 100 if total_max_punkte > 0 else 0
+                ergebnisse['gesamt_prozent'] = gesamt_prozent
+
+                add_testergebnis(teilnehmer_id, test_datum.strftime('%Y-%m-%d'), ergebnisse)
+                st.success("Testergebnis erfolgreich hinzugefügt.")
     else:
-        st.write("Keine Teilnehmer vorhanden.")
+        st.warning("Es sind keine Teilnehmer vorhanden. Bitte fügen Sie zuerst Teilnehmer hinzu.")
+
+# Prognosediagramm
+with tabs[2]:
+    st.header("Prognosediagramm")
+    teilnehmer_df = get_teilnehmer()
+    if not teilnehmer_df.empty:
+        selected_name = st.selectbox("Teilnehmer auswählen", teilnehmer_df['name'].tolist())
+        teilnehmer_id = teilnehmer_df[teilnehmer_df['name'] == selected_name]['id'].values[0]
+        if st.button("Prognosediagramm anzeigen"):
+            def prognose_diagramm(teilnehmer_id):
+                testdaten = get_testergebnisse(teilnehmer_id)
+                if testdaten.empty:
+                    st.write("Keine Testergebnisse für diesen Teilnehmer.")
+                    return
+
+                # Datum in Tage relativ zu heute umrechnen
+                testdaten['Tag'] = (pd.to_datetime(testdaten['test_datum']) - pd.Timestamp.today()).dt.days
+                # Filtern auf Zeitraum von -30 bis +30 Tagen
+                testdaten = testdaten[(testdaten['Tag'] >= -30) & (testdaten['Tag'] <= 30)]
+
+                # Daten für Altair vorbereiten
+                df_melted = testdaten.melt(id_vars=['Tag'], value_vars=[
+                    'gesamt_prozent',
+                    'textaufgaben_prozent',
+                    'raumvorstellung_prozent',
+                    'gleichungen_prozent',
+                    'brueche_prozent',
+                    'grundrechenarten_prozent',
+                    'zahlenraum_prozent'
+                ], var_name='Kategorie', value_name='Prozent')
+
+                # Linienstil definieren
+                linienstil = alt.condition(
+                    alt.FieldEqualPredicate(field='Kategorie', equal='gesamt_prozent'),
+                    alt.value('solid'),
+                    alt.value('dashed')
+                )
+
+                # Farben definieren
+                farben = {
+                    'gesamt_prozent': 'black',
+                    'textaufgaben_prozent': 'red',
+                    'raumvorstellung_prozent': 'green',
+                    'gleichungen_prozent': 'blue',
+                    'brueche_prozent': 'orange',
+                    'grundrechenarten_prozent': 'purple',
+                    'zahlenraum_prozent': 'brown'
+                }
+
+                # Diagramm erstellen
+                chart = alt.Chart(df_melted).mark_line().encode(
+                    x=alt.X('Tag', scale=alt.Scale(domain=[-30, 30]), title='Tage'),
+                    y=alt.Y('Prozent', scale=alt.Scale(domain=[0, 100]), title='Prozent'),
+                    color=alt.Color('Kategorie', scale=alt.Scale(domain=list(farben.keys()), range=list(farben.values()))),
+                    strokeDash=linienstil
+                )
+
+                st.altair_chart(chart, use_container_width=True)
+
+            prognose_diagramm(teilnehmer_id)
+    else:
+        st.warning("Es sind keine Teilnehmer vorhanden.")
+
+# Bericht erstellen
+with tabs[3]:
+    st.header("Bericht erstellen")
+    teilnehmer_df = get_teilnehmer()
+    if not teilnehmer_df.empty:
+        selected_name = st.selectbox("Teilnehmer auswählen", teilnehmer_df['name'].tolist())
+        teilnehmer_id = teilnehmer_df[teilnehmer_df['name'] == selected_name]['id'].values[0]
+
+        if st.button("Bericht generieren"):
+            # Daten abrufen
+            teilnehmer = get_teilnehmer_by_id(teilnehmer_id)
+            testergebnisse = get_testergebnisse(teilnehmer_id)
+            if testergebnisse.empty:
+                st.warning("Keine Testergebnisse für diesen Teilnehmer.")
+            else:
+                # Mittelwert der letzten beiden Tests
+                letzte_zwei = testergebnisse.sort_values(by='test_datum', ascending=False).head(2)
+                mittelwert = letzte_zwei['gesamt_prozent'].mean()
+
+                # Prognosediagramm erstellen und als Bild speichern
+                def save_prognose_diagramm(teilnehmer_id):
+                    testdaten = get_testergebnisse(teilnehmer_id)
+                    testdaten['Tag'] = (pd.to_datetime(testdaten['test_datum']) - pd.Timestamp.today()).dt.days
+                    testdaten = testdaten[(testdaten['Tag'] >= -30) & (testdaten['Tag'] <= 30)]
+                    df_melted = testdaten.melt(id_vars=['Tag'], value_vars=[
+                        'gesamt_prozent',
+                        'textaufgaben_prozent',
+                        'raumvorstellung_prozent',
+                        'gleichungen_prozent',
+                        'brueche_prozent',
+                        'grundrechenarten_prozent',
+                        'zahlenraum_prozent'
+                    ], var_name='Kategorie', value_name='Prozent')
+                    linienstil = alt.condition(
+                        alt.FieldEqualPredicate(field='Kategorie', equal='gesamt_prozent'),
+                        alt.value('solid'),
+                        alt.value('dashed')
+                    )
+                    farben = {
+                        'gesamt_prozent': 'black',
+                        'textaufgaben_prozent': 'red',
+                        'raumvorstellung_prozent': 'green',
+                        'gleichungen_prozent': 'blue',
+                        'brueche_prozent': 'orange',
+                        'grundrechenarten_prozent': 'purple',
+                        'zahlenraum_prozent': 'brown'
+                    }
+                    chart = alt.Chart(df_melted).mark_line().encode(
+                        x=alt.X('Tag', scale=alt.Scale(domain=[-30, 30]), title='Tage'),
+                        y=alt.Y('Prozent', scale=alt.Scale(domain=[0, 100]), title='Prozent'),
+                        color=alt.Color('Kategorie', scale=alt.Scale(domain=list(farben.keys()), range=list(farben.values()))),
+                        strokeDash=linienstil
+                    )
+                    chart_path = f"{teilnehmer[1]}_prognose_diagramm.png"
+                    chart.save(chart_path)
+                    return chart_path
+
+                diagramm_path = save_prognose_diagramm(teilnehmer_id)
+
+                # PDF-Bericht erstellen
+                def create_pdf(teilnehmer, testergebnisse, mittelwert, diagramm_path):
+                    html_content = f"""
+                    <h1>Bericht für {teilnehmer[1]}</h1>
+                    <p><strong>Name:</strong> {teilnehmer[1]}</p>
+                    <p><strong>SV-Nummer:</strong> {teilnehmer[2]}</p>
+                    <p><strong>Berufswunsch:</strong> {teilnehmer[3]}</p>
+                    <p><strong>Eintrittsdatum:</strong> {teilnehmer[4]}</p>
+                    <p><strong>Austrittsdatum:</strong> {teilnehmer[5]}</p>
+                    <p><strong>Mittelwert der letzten zwei Tests:</strong> {mittelwert:.2f}%</p>
+                    <h2>Testergebnisse</h2>
+                    {testergebnisse.to_html(index=False)}
+                    <h2>Prognosediagramm</h2>
+                    <img src='{diagramm_path}' alt='Prognosediagramm'>
+                    """
+                    pdf_file = f"{teilnehmer[1]}-Bericht.pdf"
+                    HTML(string=html_content).write_pdf(pdf_file)
+                    return pdf_file
+
+                pdf_file = create_pdf(teilnehmer, testergebnisse, mittelwert, diagramm_path)
+
+                # Excel-Bericht erstellen
+                def create_excel(teilnehmer, testergebnisse):
+                    file_name = f"{teilnehmer[1]}-Bericht.xlsx"
+                    with pd.ExcelWriter(file_name) as writer:
+                        testergebnisse.to_excel(writer, index=False)
+                    return file_name
+
+                excel_file = create_excel(teilnehmer, testergebnisse)
+
+                # Dateien zum Download anbieten
+                with open(pdf_file, "rb") as f:
+                    pdf_bytes = f.read()
+                    b64_pdf = base64.b64encode(pdf_bytes).decode()
+                    href = f'<a href="data:application/octet-stream;base64,{b64_pdf}" download="{pdf_file}">PDF-Bericht herunterladen</a>'
+                    st.markdown(href, unsafe_allow_html=True)
+
+                with open(excel_file, "rb") as f:
+                    excel_bytes = f.read()
+                    b64_excel = base64.b64encode(excel_bytes).decode()
+                    href = f'<a href="data:application/octet-stream;base64,{b64_excel}" download="{excel_file}">Excel-Bericht herunterladen</a>'
+                    st.markdown(href, unsafe_allow_html=True)
+
+                # Temporäre Dateien entfernen
+                os.remove(diagramm_path)
+                os.remove(pdf_file)
+                os.remove(excel_file)
+    else:
+        st.warning("Es sind keine Teilnehmer vorhanden.")
+
+# Modelltraining mit PyCaret (optional, kann beim Start der App ausgeführt werden)
+def train_model():
+    tests_df = get_all_testergebnisse()
+    if tests_df.empty:
+        st.write("Nicht genügend Daten zum Trainieren des Modells.")
+        return None
+    # Nur relevante Spalten verwenden
+    data = tests_df[[
+        'textaufgaben_prozent',
+        'raumvorstellung_prozent',
+        'gleichungen_prozent',
+        'brueche_prozent',
+        'grundrechenarten_prozent',
+        'zahlenraum_prozent',
+        'gesamt_prozent'
+    ]]
+    reg = setup(data=data, target='gesamt_prozent', silent=True, session_id=123)
+    best_model = compare_models()
+    save_model(best_model, 'best_prognose_model')
+    st.success("Modell erfolgreich trainiert.")
+
+# Optional: Modell beim Start der App trainieren
+# train_model()
