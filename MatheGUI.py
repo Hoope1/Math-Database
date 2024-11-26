@@ -5,7 +5,7 @@ from datetime import datetime, date
 import re
 import altair as alt
 from pycaret.regression import setup, compare_models, predict_model, save_model, load_model
-from weasyprint import HTML
+from fpdf import FPDF
 import base64
 import os
 
@@ -395,21 +395,36 @@ with tabs[3]:
 
                 # PDF-Bericht erstellen
                 def create_pdf(teilnehmer, testergebnisse, mittelwert, diagramm_path):
-                    html_content = f"""
-                    <h1>Bericht für {teilnehmer[1]}</h1>
-                    <p><strong>Name:</strong> {teilnehmer[1]}</p>
-                    <p><strong>SV-Nummer:</strong> {teilnehmer[2]}</p>
-                    <p><strong>Berufswunsch:</strong> {teilnehmer[3]}</p>
-                    <p><strong>Eintrittsdatum:</strong> {teilnehmer[4]}</p>
-                    <p><strong>Austrittsdatum:</strong> {teilnehmer[5]}</p>
-                    <p><strong>Mittelwert der letzten zwei Tests:</strong> {mittelwert:.2f}%</p>
-                    <h2>Testergebnisse</h2>
-                    {testergebnisse.to_html(index=False)}
-                    <h2>Prognosediagramm</h2>
-                    <img src='{diagramm_path}' alt='Prognosediagramm'>
-                    """
+                    pdf = FPDF()
+                    pdf.add_page()
+                    pdf.set_font("Arial", 'B', 16)
+                    pdf.cell(0, 10, f"Bericht für {teilnehmer[1]}", ln=True)
+
+                    pdf.set_font("Arial", '', 12)
+                    pdf.cell(0, 10, f"Name: {teilnehmer[1]}", ln=True)
+                    pdf.cell(0, 10, f"SV-Nummer: {teilnehmer[2]}", ln=True)
+                    pdf.cell(0, 10, f"Berufswunsch: {teilnehmer[3]}", ln=True)
+                    pdf.cell(0, 10, f"Eintrittsdatum: {teilnehmer[4]}", ln=True)
+                    pdf.cell(0, 10, f"Austrittsdatum: {teilnehmer[5]}", ln=True)
+                    pdf.cell(0, 10, f"Mittelwert der letzten zwei Tests: {mittelwert:.2f}%", ln=True)
+
+                    pdf.cell(0, 10, "", ln=True)  # Leerzeile
+                    pdf.set_font("Arial", 'B', 14)
+                    pdf.cell(0, 10, "Testergebnisse:", ln=True)
+
+                    pdf.set_font("Arial", '', 10)
+                    # Testergebnisse als Tabelle hinzufügen
+                    for index, row in testergebnisse.iterrows():
+                        pdf.cell(0, 10, f"Testdatum: {row['test_datum']}", ln=True)
+                        pdf.cell(0, 10, f"Gesamtprozent: {row['gesamt_prozent']:.2f}%", ln=True)
+                        pdf.cell(0, 10, "", ln=True)  # Leerzeile zwischen Tests
+
+                    # Diagramm hinzufügen
+                    pdf.add_page()
+                    pdf.image(diagramm_path, x=10, y=10, w=pdf.w - 20)
+
                     pdf_file = f"{teilnehmer[1]}-Bericht.pdf"
-                    HTML(string=html_content).write_pdf(pdf_file)
+                    pdf.output(pdf_file)
                     return pdf_file
 
                 pdf_file = create_pdf(teilnehmer, testergebnisse, mittelwert, diagramm_path)
