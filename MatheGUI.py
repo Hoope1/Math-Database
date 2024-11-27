@@ -1,3 +1,5 @@
+# app.py
+
 import streamlit as st
 import pandas as pd
 import sqlite3
@@ -184,7 +186,7 @@ with tabs[0]:
     # Teilnehmerliste aktualisieren
     teilnehmer_df = get_teilnehmer()
     teilnehmer_options = ["Neuen Teilnehmer hinzufügen"] + teilnehmer_df['name'].tolist()
-    selected_teilnehmer = st.selectbox("Teilnehmer auswählen", teilnehmer_options)
+    selected_teilnehmer = st.selectbox("Teilnehmer auswählen", teilnehmer_options, key='teilnehmer_auswahl')
 
     if selected_teilnehmer == "Neuen Teilnehmer hinzufügen":
         name = st.text_input("Name")
@@ -235,7 +237,7 @@ with tabs[1]:
     if not teilnehmer_df.empty:
         teilnehmer_list = teilnehmer_df[['id', 'name']].values.tolist()
         teilnehmer_dict = {name: id for id, name in teilnehmer_list}
-        selected_name = st.selectbox("Teilnehmer auswählen", [name for name in teilnehmer_dict.keys()])
+        selected_name = st.selectbox("Teilnehmer auswählen", [name for name in teilnehmer_dict.keys()], key='testergebnisse_teilnehmer')
         teilnehmer_id = teilnehmer_dict[selected_name]
 
         test_datum = st.date_input("Testdatum", date.today())
@@ -277,7 +279,7 @@ with tabs[2]:
     st.header("Prognosediagramm")
     teilnehmer_df = get_teilnehmer()
     if not teilnehmer_df.empty:
-        selected_name = st.selectbox("Teilnehmer auswählen", teilnehmer_df['name'].tolist())
+        selected_name = st.selectbox("Teilnehmer auswählen", teilnehmer_df['name'].tolist(), key='prognose_teilnehmer')
         teilnehmer_id = teilnehmer_df[teilnehmer_df['name'] == selected_name]['id'].values[0]
         if st.button("Prognosediagramm anzeigen"):
             def prognose_diagramm(teilnehmer_id):
@@ -339,7 +341,7 @@ with tabs[3]:
     st.header("Bericht erstellen")
     teilnehmer_df = get_teilnehmer()
     if not teilnehmer_df.empty:
-        selected_name = st.selectbox("Teilnehmer auswählen", teilnehmer_df['name'].tolist())
+        selected_name = st.selectbox("Teilnehmer auswählen", teilnehmer_df['name'].tolist(), key='bericht_teilnehmer')
         teilnehmer_id = teilnehmer_df[teilnehmer_df['name'] == selected_name]['id'].values[0]
 
         if st.button("Bericht generieren"):
