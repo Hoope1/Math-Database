@@ -124,6 +124,8 @@ def add_testergebnis(teilnehmer_id, test_datum, ergebnisse):
         ergebnisse['gesamt_prozent']
     ))
     conn.commit()
+    # Debugging-Ausgabe
+    # st.write("Testergebnis in die Datenbank eingefügt:", teilnehmer_id, test_datum, ergebnisse)
 
 def get_latest_testergebnis(teilnehmer_id):
     c.execute('''
@@ -135,6 +137,8 @@ def get_latest_testergebnis(teilnehmer_id):
     return c.fetchone()
 
 def get_testergebnisse(teilnehmer_id):
+    # Debugging-Ausgabe
+    # st.write("Abrufen der Testergebnisse für teilnehmer_id:", teilnehmer_id)
     c.execute('''
         SELECT * FROM testergebnisse
         WHERE teilnehmer_id = ?
@@ -235,10 +239,12 @@ with tabs[1]:
     # Teilnehmerliste aktualisieren
     teilnehmer_df = get_teilnehmer()
     if not teilnehmer_df.empty:
-        teilnehmer_list = teilnehmer_df[['id', 'name']].values.tolist()
-        teilnehmer_dict = {name: id for id, name in teilnehmer_list}
-        selected_name = st.selectbox("Teilnehmer auswählen", [name for name in teilnehmer_dict.keys()], key='testergebnisse_teilnehmer')
-        teilnehmer_id = teilnehmer_dict[selected_name]
+        # Teilnehmer-Auswahl mit IDs anzeigen
+        teilnehmer_df['auswahl'] = teilnehmer_df.apply(lambda row: f"{row['name']} (ID: {row['id']})", axis=1)
+        selected_option = st.selectbox("Teilnehmer auswählen", teilnehmer_df['auswahl'], key='testergebnisse_teilnehmer')
+        # Extrahieren der teilnehmer_id
+        teilnehmer_id = int(selected_option.split("ID: ")[1].strip(')'))
+        selected_name = teilnehmer_df[teilnehmer_df['id'] == teilnehmer_id]['name'].values[0]
 
         test_datum = st.date_input("Testdatum", date.today())
 
@@ -271,6 +277,10 @@ with tabs[1]:
 
                 add_testergebnis(teilnehmer_id, test_datum.strftime('%Y-%m-%d'), ergebnisse)
                 st.success("Testergebnis erfolgreich hinzugefügt.")
+                # Debugging: Anzeigen aller Testergebnisse
+                # c.execute('SELECT * FROM testergebnisse')
+                # rows = c.fetchall()
+                # st.write("Alle Testergebnisse:", rows)
     else:
         st.warning("Es sind keine Teilnehmer vorhanden. Bitte fügen Sie zuerst Teilnehmer hinzu.")
 
@@ -279,8 +289,11 @@ with tabs[2]:
     st.header("Prognosediagramm")
     teilnehmer_df = get_teilnehmer()
     if not teilnehmer_df.empty:
-        selected_name = st.selectbox("Teilnehmer auswählen", teilnehmer_df['name'].tolist(), key='prognose_teilnehmer')
-        teilnehmer_id = teilnehmer_df[teilnehmer_df['name'] == selected_name]['id'].values[0]
+        teilnehmer_df['auswahl'] = teilnehmer_df.apply(lambda row: f"{row['name']} (ID: {row['id']})", axis=1)
+        selected_option = st.selectbox("Teilnehmer auswählen", teilnehmer_df['auswahl'], key='prognose_teilnehmer')
+        teilnehmer_id = int(selected_option.split("ID: ")[1].strip(')'))
+        selected_name = teilnehmer_df[teilnehmer_df['id'] == teilnehmer_id]['name'].values[0]
+
         if st.button("Prognosediagramm anzeigen"):
             def prognose_diagramm(teilnehmer_id):
                 testdaten = get_testergebnisse(teilnehmer_id)
@@ -341,8 +354,10 @@ with tabs[3]:
     st.header("Bericht erstellen")
     teilnehmer_df = get_teilnehmer()
     if not teilnehmer_df.empty:
-        selected_name = st.selectbox("Teilnehmer auswählen", teilnehmer_df['name'].tolist(), key='bericht_teilnehmer')
-        teilnehmer_id = teilnehmer_df[teilnehmer_df['name'] == selected_name]['id'].values[0]
+        teilnehmer_df['auswahl'] = teilnehmer_df.apply(lambda row: f"{row['name']} (ID: {row['id']})", axis=1)
+        selected_option = st.selectbox("Teilnehmer auswählen", teilnehmer_df['auswahl'], key='bericht_teilnehmer')
+        teilnehmer_id = int(selected_option.split("ID: ")[1].strip(')'))
+        selected_name = teilnehmer_df[teilnehmer_df['id'] == teilnehmer_id]['name'].values[0]
 
         if st.button("Bericht generieren"):
             # Daten abrufen
@@ -483,3 +498,14 @@ def train_model():
 
 # Optional: Modell beim Start der App trainieren
 # train_model()
+
+# Debugging: Anzeigen aller Teilnehmer und Testergebnisse
+if st.checkbox("Datenbankinhalt anzeigen (nur für Debugging)"):
+    st.subheader("Teilnehmer")
+    st.write(get_teilnehmer())
+    st.subheader("Testergebnisse")
+    c.execute('SELECT * FROM testergebnisse')
+    rows = c.fetchall()
+    columns = [desc[0] for desc in c.description]
+    testergebnisse_df = pd.DataFrame(rows, columns=columns)
+    st.write(testergebnisse_df)
