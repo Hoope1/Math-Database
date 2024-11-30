@@ -1,11 +1,11 @@
 [theme]
-primaryColor = "#4CAF50"               # Grüner Farbton als primäre Farbe
-backgroundColor = "#FFFFFF"            # Weißer Hintergrund
-secondaryBackgroundColor = "#F5F5F5"  # Hellgrauer Sekundärhintergrund
-textColor = "#000000"                  # Schwarzer Text
-font = "sans serif"                    # Standard-Schriftart
+primaryColor = "#4CAF50"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F5F5F5"
+textColor = "#000000"
+font = "sans serif"
 
 [server]
-headless = true                        # Server läuft im headless-Modus
-port = 8501                            # Standardport für Streamlit
-enableCORS = false                     # CORS deaktivieren, um lokale Zugriffe zu erlauben
+headless = true
+port = 8501
+enableCORS = false
