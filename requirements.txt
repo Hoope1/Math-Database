@@ -3,4 +3,4 @@ pandas==2.1.1              # Für Datenverarbeitung und tabellarische Darstellun
 pycaret==3.3.1             # Für AutoML und KI-gestützte Prognosen
 fpdf==1.7.2                # Für die Erstellung von PDF-Berichten
 openpyxl==3.1.2            # Für die Erstellung von Excel-Berichten
-matplotlib==3.8.0          # Für die Erstellung von Prognosediagrammen
+matplotlib==3.7.2          # Für die Erstellung von Prognosediagrammen
