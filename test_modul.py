@@ -62,7 +62,7 @@ def fuege_testergebnis_hinzu(teilnehmer_id, test_datum, ergebnisse):
             grundrechenarten_erreicht, grundrechenarten_max,
             zahlenraum_erreicht, zahlenraum_max,
             gesamt_prozent
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             teilnehmer_id, test_datum,
             ergebnisse['Textaufgaben']['erreicht'], ergebnisse['Textaufgaben']['max'],
