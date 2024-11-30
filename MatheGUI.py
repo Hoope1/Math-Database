@@ -167,7 +167,38 @@ def hole_alle_testergebnisse():
     zeilen = cursor.fetchall()
     spalten = [beschreibung[0] for beschreibung in cursor.description]
     return pd.DataFrame(zeilen, columns=spalten)
-    # Streamlit App Layout
+
+# Modelltraining mit PyCaret
+def trainiere_modell():
+    """Trainiert das Prognosemodell mit PyCaret und ermöglicht inkrementelles Lernen."""
+    tests_df = hole_alle_testergebnisse()
+    if tests_df.empty:
+        st.write("Nicht genügend Daten zum Trainieren des Modells.")
+        return None
+    # Nur relevante Spalten verwenden
+    daten = tests_df[[
+        'textaufgaben_prozent',
+        'raumvorstellung_prozent',
+        'gleichungen_prozent',
+        'brueche_prozent',
+        'grundrechenarten_prozent',
+        'zahlenraum_prozent',
+        'gesamt_prozent'
+    ]]
+    reg = setup(data=daten, target='gesamt_prozent', silent=True, session_id=123)
+    bestes_modell = compare_models()
+    save_model(bestes_modell, 'bestes_prognose_modell')
+    return bestes_modell
+
+def lade_modell():
+    """Lädt das trainierte Prognosemodell."""
+    try:
+        modell = load_model('bestes_prognose_modell')
+    except:
+        modell = trainiere_modell()
+    return modell
+
+# Streamlit App Layout
 st.title("Mathematik-Kurs Teilnehmerverwaltung")
 
 # Teilnehmerübersicht im oberen Teil
@@ -313,6 +344,7 @@ with tabs[1]:
     else:
         st.warning("Es sind keine Teilnehmer vorhanden. Bitte fügen Sie zuerst Teilnehmer hinzu.")
 
+# Der restliche Code bleibt unverändert...
 # Modelltraining mit PyCaret
 def trainiere_modell():
     """Trainiert das Prognosemodell mit PyCaret und ermöglicht inkrementelles Lernen."""
@@ -330,6 +362,12 @@ def trainiere_modell():
         'zahlenraum_prozent',
         'gesamt_prozent'
     ]]
+    # Datenbereinigung
+    daten = daten.dropna()
+    daten = daten.astype(float)
+    if daten.empty:
+        st.write("Nach der Datenbereinigung sind keine Daten zum Trainieren vorhanden.")
+        return None
     reg = setup(data=daten, target='gesamt_prozent', silent=True, session_id=123)
     bestes_modell = compare_models()
     save_model(bestes_modell, 'bestes_prognose_modell')
@@ -363,136 +401,83 @@ with tabs[2]:
             else:
                 # Modell laden
                 modell = lade_modell()
-                # Prognose erstellen
-                daten = testergebnisse.copy()
-                daten['test_datum'] = pd.to_datetime(daten['test_datum'])
-                daten.sort_values('test_datum', inplace=True)
+                if modell is None:
+                    st.warning("Das Modell konnte nicht geladen werden.")
+                else:
+                    # Datenbereinigung
+                    testergebnisse = testergebnisse.dropna()
+                    if testergebnisse.empty:
+                        st.warning("Keine gültigen Testergebnisse vorhanden.")
+                    else:
+                        # Prognose erstellen
+                        daten = testergebnisse.copy()
+                        daten['test_datum'] = pd.to_datetime(daten['test_datum'])
+                        daten.sort_values('test_datum', inplace=True)
 
-                # Merkmale für Prognose
-                merkmale = [
-                    'textaufgaben_prozent',
-                    'raumvorstellung_prozent',
-                    'gleichungen_prozent',
-                    'brueche_prozent',
-                    'grundrechenarten_prozent',
-                    'zahlenraum_prozent'
-                ]
+                        # Merkmale für Prognose
+                        merkmale = [
+                            'textaufgaben_prozent',
+                            'raumvorstellung_prozent',
+                            'gleichungen_prozent',
+                            'brueche_prozent',
+                            'grundrechenarten_prozent',
+                            'zahlenraum_prozent'
+                        ]
 
-                # Prognose für die nächsten 30 Tage
-                zukunft_tage = pd.date_range(start=date.today(), periods=31)
-                zukunft_daten = pd.DataFrame({
-                    'Tag': (zukunft_tage - date.today()).days,
-                    'textaufgaben_prozent': daten['textaufgaben_prozent'].iloc[-1],
-                    'raumvorstellung_prozent': daten['raumvorstellung_prozent'].iloc[-1],
-                    'gleichungen_prozent': daten['gleichungen_prozent'].iloc[-1],
-                    'brueche_prozent': daten['brueche_prozent'].iloc[-1],
-                    'grundrechenarten_prozent': daten['grundrechenarten_prozent'].iloc[-1],
-                    'zahlenraum_prozent': daten['zahlenraum_prozent'].iloc[-1]
-                })
+                        # Prognose für die nächsten 30 Tage
+                        zukunft_tage = pd.date_range(start=date.today(), periods=31)
+                        zukunft_daten = pd.DataFrame({
+                            'Tag': (zukunft_tage - date.today()).days,
+                        })
+                        for merkmal in merkmale:
+                            letzter_wert = daten[merkmal].iloc[-1]
+                            zukunft_daten[merkmal] = letzter_wert
 
-                prognose = predict_model(modell, data=zukunft_daten[merkmale])
-                zukunft_daten['prognose_gesamt_prozent'] = prognose['Label']
+                        prognose = predict_model(modell, data=zukunft_daten[merkmale])
+                        zukunft_daten['prognose_gesamt_prozent'] = prognose['Label']
 
-                # Historische Daten der letzten 30 Tage
-                daten['Tag'] = (daten['test_datum'] - pd.Timestamp(date.today())).dt.days
-                vergangenheit_daten = daten[daten['Tag'] >= -30]
+                        # Historische Daten der letzten 30 Tage
+                        daten['Tag'] = (daten['test_datum'] - pd.Timestamp(date.today())).dt.days
+                        vergangenheit_daten = daten[daten['Tag'] >= -30]
 
-                # Zusammenführen von Vergangenheit und Zukunft
-                gesamtdaten = pd.concat([vergangenheit_daten, zukunft_daten], ignore_index=True)
+                        # Zusammenführen von Vergangenheit und Zukunft
+                        gesamtdaten = pd.concat([vergangenheit_daten, zukunft_daten], ignore_index=True)
 
-                # Daten für Altair vorbereiten
-                df_melted = pd.melt(
-                    gesamtdaten,
-                    id_vars=['Tag'],
-                    value_vars=[
-                        'gesamt_prozent',
-                        'prognose_gesamt_prozent',
-                        'textaufgaben_prozent',
-                        'raumvorstellung_prozent',
-                        'gleichungen_prozent',
-                        'brueche_prozent',
-                        'grundrechenarten_prozent',
-                        'zahlenraum_prozent'
-                    ],
-                    var_name='Kategorie',
-                    value_name='Prozent'
-                )
+                        # Daten für Altair vorbereiten
+                        df_melted = pd.melt(
+                            gesamtdaten,
+                            id_vars=['Tag'],
+                            value_vars=[
+                                'gesamt_prozent',
+                                'prognose_gesamt_prozent'
+                            ],
+                            var_name='Kategorie',
+                            value_name='Prozent'
+                        )
 
-                # Kategorienamen anpassen
-                kategorie_mapping = {
-                    'gesamt_prozent': 'Gesamtfortschritt',
-                    'prognose_gesamt_prozent': 'Prognose Gesamtfortschritt',
-                    'textaufgaben_prozent': 'Textaufgaben',
-                    'raumvorstellung_prozent': 'Raumvorstellung',
-                    'gleichungen_prozent': 'Gleichungen',
-                    'brueche_prozent': 'Brüche',
-                    'grundrechenarten_prozent': 'Grundrechenarten',
-                    'zahlenraum_prozent': 'Zahlenraum'
-                }
-                df_melted['Kategorie'] = df_melted['Kategorie'].map(kategorie_mapping)
+                        # Kategorienamen anpassen
+                        kategorie_mapping = {
+                            'gesamt_prozent': 'Gesamtfortschritt',
+                            'prognose_gesamt_prozent': 'Prognose Gesamtfortschritt'
+                        }
+                        df_melted['Kategorie'] = df_melted['Kategorie'].map(kategorie_mapping)
 
-                # Interaktive Elementauswahl
-                kategorien_optionen = [
-                    'Gesamtfortschritt',
-                    'Prognose Gesamtfortschritt',
-                    'Textaufgaben',
-                    'Raumvorstellung',
-                    'Gleichungen',
-                    'Brüche',
-                    'Grundrechenarten',
-                    'Zahlenraum'
-                ]
-                ausgewaehlte_kategorien = st.multiselect(
-                    "Kategorien auswählen",
-                    kategorien_optionen,
-                    default=['Gesamtfortschritt', 'Prognose Gesamtfortschritt']
-                )
-
-                # Farben und Linienstile definieren
-                farben = {
-                    'Gesamtfortschritt': 'black',
-                    'Prognose Gesamtfortschritt': 'black',
-                    'Textaufgaben': 'red',
-                    'Raumvorstellung': 'blue',
-                    'Gleichungen': 'green',
-                    'Brüche': 'purple',
-                    'Grundrechenarten': 'orange',
-                    'Zahlenraum': 'brown'
-                }
-                linienstile = {
-                    'Gesamtfortschritt': [],
-                    'Prognose Gesamtfortschritt': [5, 5],
-                    'Textaufgaben': [5, 5],
-                    'Raumvorstellung': [5, 5],
-                    'Gleichungen': [5, 5],
-                    'Brüche': [5, 5],
-                    'Grundrechenarten': [5, 5],
-                    'Zahlenraum': [5, 5]
-                }
-
-                # Daten filtern
-                df_melted = df_melted[df_melted['Kategorie'].isin(ausgewaehlte_kategorien)]
-
-                # Diagramm erstellen
-                linien = []
-                for kategorie in ausgewaehlte_kategorien:
-                    daten_kategorie = df_melted[df_melted['Kategorie'] == kategorie]
-                    linie = alt.Chart(daten_kategorie).mark_line(
-                        color=farben[kategorie],
-                        strokeDash=linienstile[kategorie]
-                    ).encode(
-                        x=alt.X('Tag', scale=alt.Scale(domain=[-30, 30]), title='Tage'),
-                        y=alt.Y('Prozent', scale=alt.Scale(domain=[0, 100]), title='Prozent'),
-                        tooltip=['Tag', 'Prozent']
-                    )
-                    linien.append(linie)
-
-                chart = alt.layer(*linien).properties(
-                    width=700,
-                    height=400,
-                    title='Prognose über 60 Tage (-30 bis +30 Tage)'
-                )
-                st.altair_chart(chart, use_container_width=True)
+                        # Diagramm erstellen
+                        chart = alt.Chart(df_melted).mark_line().encode(
+                            x=alt.X('Tag', scale=alt.Scale(domain=[-30, 30]), title='Tage'),
+                            y=alt.Y('Prozent', scale=alt.Scale(domain=[0, 100]), title='Prozent'),
+                            color='Kategorie',
+                            strokeDash=alt.condition(
+                                alt.datum.Kategorie == 'Prognose Gesamtfortschritt',
+                                alt.value([5, 5]),
+                                alt.value([0])
+                            )
+                        ).properties(
+                            width=700,
+                            height=400,
+                            title='Prognose über 60 Tage (-30 bis +30 Tage)'
+                        )
+                        st.altair_chart(chart, use_container_width=True)
     else:
         st.warning("Es sind keine Teilnehmer vorhanden.")
 
@@ -521,11 +506,16 @@ with tabs[3]:
 
                 # Prognosediagramm erstellen und als Bild speichern
                 def speichere_prognose_diagramm(teilnehmer_id):
-                    # Prognosedaten vorbereiten (gleiche Logik wie im Prognose-System)
+                    # Prognosedaten vorbereiten
                     testergebnisse = hole_testergebnisse(teilnehmer_id)
                     if testergebnisse.empty:
                         return None
+                    testergebnisse = testergebnisse.dropna()
+                    if testergebnisse.empty:
+                        return None
                     modell = lade_modell()
+                    if modell is None:
+                        return None
                     daten = testergebnisse.copy()
                     daten['test_datum'] = pd.to_datetime(daten['test_datum'])
                     daten.sort_values('test_datum', inplace=True)
@@ -544,13 +534,10 @@ with tabs[3]:
                     zukunft_tage = pd.date_range(start=date.today(), periods=31)
                     zukunft_daten = pd.DataFrame({
                         'Tag': (zukunft_tage - date.today()).days,
-                        'textaufgaben_prozent': daten['textaufgaben_prozent'].iloc[-1],
-                        'raumvorstellung_prozent': daten['raumvorstellung_prozent'].iloc[-1],
-                        'gleichungen_prozent': daten['gleichungen_prozent'].iloc[-1],
-                        'brueche_prozent': daten['brueche_prozent'].iloc[-1],
-                        'grundrechenarten_prozent': daten['grundrechenarten_prozent'].iloc[-1],
-                        'zahlenraum_prozent': daten['zahlenraum_prozent'].iloc[-1]
                     })
+                    for merkmal in merkmale:
+                        letzter_wert = daten[merkmal].iloc[-1]
+                        zukunft_daten[merkmal] = letzter_wert
 
                     prognose = predict_model(modell, data=zukunft_daten[merkmale])
                     zukunft_daten['prognose_gesamt_prozent'] = prognose['Label']
@@ -574,15 +561,22 @@ with tabs[3]:
                         value_name='Prozent'
                     )
 
+                    # Kategorienamen anpassen
+                    kategorie_mapping = {
+                        'gesamt_prozent': 'Gesamtfortschritt',
+                        'prognose_gesamt_prozent': 'Prognose Gesamtfortschritt'
+                    }
+                    df_melted['Kategorie'] = df_melted['Kategorie'].map(kategorie_mapping)
+
                     # Diagramm erstellen
                     chart = alt.Chart(df_melted).mark_line().encode(
                         x=alt.X('Tag', scale=alt.Scale(domain=[-30, 30]), title='Tage'),
                         y=alt.Y('Prozent', scale=alt.Scale(domain=[0, 100]), title='Prozent'),
-                        color=alt.Color('Kategorie', legend=alt.Legend(title="Kategorie")),
+                        color='Kategorie',
                         strokeDash=alt.condition(
-                            alt.datum.Kategorie == 'prognose_gesamt_prozent',
+                            alt.datum.Kategorie == 'Prognose Gesamtfortschritt',
                             alt.value([5, 5]),
-                            alt.value([])
+                            alt.value([0])
                         )
                     ).properties(
                         width=600,
@@ -668,10 +662,6 @@ with tabs[3]:
     else:
         st.warning("Es sind keine Teilnehmer vorhanden.")
 
-# Anpassung der Caching-Dekoratoren (Optimierung O8)
-# Entfernen von Caching bei Datenbankabfragen, um Dateninkonsistenzen zu vermeiden
-# Alle Funktionen mit @st.cache_data wurden angepasst oder der Dekorator wurde entfernt
-
 # Debugging: Anzeigen aller Teilnehmer und Testergebnisse
 if st.checkbox("Datenbankinhalt anzeigen (nur für Debugging)"):
     st.subheader("Teilnehmer")
@@ -679,20 +669,3 @@ if st.checkbox("Datenbankinhalt anzeigen (nur für Debugging)"):
     st.subheader("Testergebnisse")
     testergebnisse_df = hole_alle_testergebnisse()
     st.write(testergebnisse_df)
-
-# Requirements.txt erstellen (Optimierung O7)
-def erstelle_requirements():
-    requirements = """
-    streamlit==1.25.0  # Für die Web-App
-    pandas==2.1.1      # Für Datenverarbeitung
-    sqlite3            # Für Datenbank
-    altair==5.1.1      # Für Visualisierung
-    pycaret==3.0.5     # Für AutoML und Prognosemodellierung
-    fpdf==1.7.2        # Für PDF-Generierung
-    openpyxl==3.1.2    # Für Excel-Verarbeitung
-    scikit-learn==1.3.0  # Für maschinelles Lernen
-    """
-    with open('requirements.txt', 'w') as f:
-        f.write(requirements.strip())
-
-erstelle_requirements()
