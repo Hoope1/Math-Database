@@ -1,9 +1,9 @@
 # app.py
 import streamlit as st
-from teilnehmer import teilnehmerverwaltung
-from testverwaltung import testverwaltung  # Import aktualisiert
-from prognose import prognosesystem
-from bericht import berichtswesen
+from teilnehmer_modul import teilnehmerverwaltung
+from test_modul import testverwaltung
+from prognose_modul import prognosesystem
+from bericht_modul import berichtswesen
 
 # Hauptlayout der Anwendung
 st.sidebar.title("Navigation")
