@@ -1,14 +1,17 @@
-# bericht.py
 import streamlit as st
 import sqlite3
 import pandas as pd
 from fpdf import FPDF
 import openpyxl
 from io import BytesIO
-from prognose import lade_modell, erstelle_prognosedaten, generiere_prognosen
+from prognose_modul import lade_modell, erstelle_prognosedaten, generiere_prognosen
+import os
 
-# Datenbankverbindung
-verbindung = sqlite3.connect('data/mathematik_kurs.db', check_same_thread=False)
+# Absoluter Pfad zur Datenbank im temporären Verzeichnis
+datenbank_pfad = os.path.join('/tmp', 'mathematik_kurs.db')
+
+# Verbindung zur Datenbank
+verbindung = sqlite3.connect(datenbank_pfad, check_same_thread=False)
 
 # PDF-Bericht
 def generiere_pdf_bericht(teilnehmer, testergebnisse, prognosedaten):
