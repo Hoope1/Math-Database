@@ -1,11 +1,14 @@
-# tests.py
 import streamlit as st
 import sqlite3
-import pandas as pd
 from datetime import date
+import pandas as pd
+import os
 
-# Datenbankverbindung
-verbindung = sqlite3.connect('data/mathematik_kurs.db', check_same_thread=False)
+# Absoluter Pfad zur Datenbank im temporären Verzeichnis
+datenbank_pfad = os.path.join('/tmp', 'mathematik_kurs.db')
+
+# Verbindung zur Datenbank
+verbindung = sqlite3.connect(datenbank_pfad, check_same_thread=False)
 cursor = verbindung.cursor()
 
 # Tabelle für Testergebnisse initialisieren
