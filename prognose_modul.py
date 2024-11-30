@@ -1,13 +1,16 @@
-# prognose.py
 import streamlit as st
 import sqlite3
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 from pycaret.regression import setup, compare_models, predict_model, save_model, load_model
 import matplotlib.pyplot as plt
+import os
 
-# Datenbankverbindung
-verbindung = sqlite3.connect('data/mathematik_kurs.db', check_same_thread=False)
+# Absoluter Pfad zur Datenbank im temporären Verzeichnis
+datenbank_pfad = os.path.join('/tmp', 'mathematik_kurs.db')
+
+# Verbindung zur Datenbank
+verbindung = sqlite3.connect(datenbank_pfad, check_same_thread=False)
 
 # Modell speichern/laden
 def lade_modell():
