@@ -1,7 +1,7 @@
 # app.py
 import streamlit as st
 from teilnehmer import teilnehmerverwaltung
-from tests import testverwaltung
+from testverwaltung import testverwaltung  # Import aktualisiert
 from prognose import prognosesystem
 from bericht import berichtswesen
 
