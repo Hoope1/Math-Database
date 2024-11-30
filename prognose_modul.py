@@ -35,12 +35,24 @@ def trainiere_modell():
         'brueche_erreicht', 'grundrechenarten_erreicht', 'zahlenraum_erreicht', 'gesamt_prozent'
     ]]
 
+    # Sicherstellen, dass keine fehlenden Werte vorhanden sind
+    daten = daten.dropna()
+
+    # Sicherstellen, dass es genügend Datenpunkte gibt
+    if daten.shape[0] < 2:
+        st.error("Nicht genügend Datenpunkte zum Trainieren des Modells.")
+        return None
+
     # PyCaret-Setup und Modellvergleich
-    setup(data=daten, target='gesamt_prozent', silent=True, session_id=123)
-    bestes_modell = compare_models()
-    save_model(bestes_modell, 'bestes_prognose_modell')
-    st.success("Modelltraining abgeschlossen und Modell gespeichert.")
-    return bestes_modell
+    try:
+        setup(data=daten, target='gesamt_prozent', silent=True, session_id=123)
+        bestes_modell = compare_models()
+        save_model(bestes_modell, 'bestes_prognose_modell')
+        st.success("Modelltraining abgeschlossen und Modell gespeichert.")
+        return bestes_modell
+    except Exception as e:
+        st.error(f"Fehler beim Modelltraining: {e}")
+        return None
 
 def generiere_prognosen(modell, daten):
     """Erstellt Vorhersagen für einen gegebenen Datensatz."""
