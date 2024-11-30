@@ -42,28 +42,42 @@ def berechne_prozent(erreichte_punkte, maximale_punkte):
 
 def fuege_testergebnis_hinzu(teilnehmer_id, test_datum, ergebnisse):
     """Speichert ein Testergebnis in der Datenbank."""
-    cursor.execute('''
-    INSERT INTO testergebnisse (
-        teilnehmer_id, test_datum,
-        textaufgaben_erreicht, textaufgaben_max,
-        raumvorstellung_erreicht, raumvorstellung_max,
-        gleichungen_erreicht, gleichungen_max,
-        brueche_erreicht, brueche_max,
-        grundrechenarten_erreicht, grundrechenarten_max,
-        zahlenraum_erreicht, zahlenraum_max,
-        gesamt_prozent
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        teilnehmer_id, test_datum,
-        ergebnisse['Textaufgaben']['erreicht'], ergebnisse['Textaufgaben']['max'],
-        ergebnisse['Raumvorstellung']['erreicht'], ergebnisse['Raumvorstellung']['max'],
-        ergebnisse['Gleichungen']['erreicht'], ergebnisse['Gleichungen']['max'],
-        ergebnisse['Brüche']['erreicht'], ergebnisse['Brüche']['max'],
-        ergebnisse['Grundrechenarten']['erreicht'], ergebnisse['Grundrechenarten']['max'],
-        ergebnisse['Zahlenraum']['erreicht'], ergebnisse['Zahlenraum']['max'],
-        ergebnisse['gesamt_prozent']
-    ))
-    verbindung.commit()
+    try:
+        # Validierung der Ergebnisse
+        for kategorie in [
+            'Textaufgaben', 'Raumvorstellung', 'Gleichungen',
+            'Brüche', 'Grundrechenarten', 'Zahlenraum'
+        ]:
+            if 'erreicht' not in ergebnisse[kategorie] or 'max' not in ergebnisse[kategorie]:
+                raise ValueError(f"Fehlende Daten für Kategorie: {kategorie}")
+
+        # SQL-Insert ausführen
+        cursor.execute('''
+        INSERT INTO testergebnisse (
+            teilnehmer_id, test_datum,
+            textaufgaben_erreicht, textaufgaben_max,
+            raumvorstellung_erreicht, raumvorstellung_max,
+            gleichungen_erreicht, gleichungen_max,
+            brueche_erreicht, brueche_max,
+            grundrechenarten_erreicht, grundrechenarten_max,
+            zahlenraum_erreicht, zahlenraum_max,
+            gesamt_prozent
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            teilnehmer_id, test_datum,
+            ergebnisse['Textaufgaben']['erreicht'], ergebnisse['Textaufgaben']['max'],
+            ergebnisse['Raumvorstellung']['erreicht'], ergebnisse['Raumvorstellung']['max'],
+            ergebnisse['Gleichungen']['erreicht'], ergebnisse['Gleichungen']['max'],
+            ergebnisse['Brüche']['erreicht'], ergebnisse['Brüche']['max'],
+            ergebnisse['Grundrechenarten']['erreicht'], ergebnisse['Grundrechenarten']['max'],
+            ergebnisse['Zahlenraum']['erreicht'], ergebnisse['Zahlenraum']['max'],
+            ergebnisse['gesamt_prozent']
+        ))
+        verbindung.commit()
+    except sqlite3.Error as e:
+        st.error(f"Ein Fehler ist beim Einfügen in die Datenbank aufgetreten: {e}")
+    except ValueError as e:
+        st.error(str(e))
 
 # Testverwaltung
 def testverwaltung():
